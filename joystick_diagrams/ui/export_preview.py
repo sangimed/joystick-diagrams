@@ -1,8 +1,9 @@
 """Live Chromium-backed SVG preview widgets for the Export page."""
 
 import re
+from pathlib import Path
 
-from PySide6.QtCore import QByteArray, QTimer, Qt, QUrl, Signal
+from PySide6.QtCore import QTemporaryDir, QTimer, Qt, QUrl, Signal
 from PySide6.QtWebEngineWidgets import QWebEngineView
 from PySide6.QtWidgets import (
     QFrame,
@@ -135,6 +136,12 @@ class SvgPreviewView(QWidget):
         self._has_preview = False
         self._auto_fit = True
         self._zoom_factor = 1.0
+        self._temp_dir = QTemporaryDir()
+        self._preview_path = (
+            Path(self._temp_dir.path()) / "preview.svg"
+            if self._temp_dir.isValid()
+            else None
+        )
 
         self._layout = QVBoxLayout(self)
         self._layout.setContentsMargins(0, 0, 0, 0)
@@ -162,8 +169,23 @@ class SvgPreviewView(QWidget):
         return view
 
     def load_svg(self, svg_data: str) -> bool:
-        """Render generated SVG bytes directly in Chromium without touching disk."""
+        """Render generated SVG through a private temporary file in Chromium.
+
+        QWebEngine's ``setContent`` uses a data URL internally and is subject to a
+        small URL-size limit. draw.io templates can be several megabytes, so the
+        preview writes only to a QTemporaryDir and loads that file locally. The
+        bytes are still exactly those returned by ``populate_template()``.
+        """
         if re.search(r"<svg\b", svg_data, re.IGNORECASE) is None:
+            self.clear_preview()
+            return False
+        if self._preview_path is None:
+            self.clear_preview()
+            return False
+
+        try:
+            self._preview_path.write_text(svg_data, encoding="utf-8")
+        except OSError:
             self.clear_preview()
             return False
 
@@ -173,11 +195,7 @@ class SvgPreviewView(QWidget):
 
         view = self._ensure_web_view()
         view.show()
-        view.setContent(
-            QByteArray(svg_data.encode("utf-8")),
-            "image/svg+xml",
-            QUrl("about:blank"),
-        )
+        view.load(QUrl.fromLocalFile(str(self._preview_path.resolve())))
         return True
 
     def clear_preview(self) -> None:
