@@ -60,7 +60,10 @@ class SvgPreviewView(QGraphicsView):
             return False
 
         scene = self.scene()
+        old_renderer = self._renderer
         scene.clear()
+        if old_renderer is not None:
+            old_renderer.deleteLater()
 
         self._renderer = renderer
         self._item = QGraphicsSvgItem()
