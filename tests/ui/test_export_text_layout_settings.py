@@ -24,7 +24,9 @@ def test_enabling_text_layout_enables_controls_and_persists(qtbot):
     widget = ExportTextLayoutSettings()
     qtbot.addWidget(widget)
 
-    qtbot.mouseClick(widget.enabled_cb, Qt.MouseButton.LeftButton)
+    # setChecked() is deterministic even when the widget is not shown. Using a
+    # synthetic mouse click on a hidden widget is platform-dependent on Qt/Windows.
+    widget.enabled_cb.setChecked(True)
 
     assert widget.enabled_cb.isChecked() is True
     assert widget.font_size_spin.isEnabled() is True
@@ -37,27 +39,29 @@ def test_numeric_text_layout_settings_are_persisted(qtbot):
     widget = ExportTextLayoutSettings()
     qtbot.addWidget(widget)
 
-    qtbot.mouseClick(widget.enabled_cb, Qt.MouseButton.LeftButton)
+    widget.enabled_cb.setChecked(True)
     widget.font_size_spin.setValue(11)
     widget.max_chars_spin.setValue(22)
-    widget.min_font_size_spin.setValue(7)
+    # The default minimum is 7, so choose a different value to ensure
+    # QSpinBox.valueChanged is emitted and persistence is exercised.
+    widget.min_font_size_spin.setValue(6)
 
     assert get_setting(TEXT_FONT_SIZE_SETTING_KEY) == "11"
     assert get_setting(TEXT_MAX_CHARS_SETTING_KEY) == "22"
-    assert get_setting(TEXT_MIN_FONT_SIZE_SETTING_KEY) == "7"
+    assert get_setting(TEXT_MIN_FONT_SIZE_SETTING_KEY) == "6"
 
 
 def test_wrap_and_shrink_toggle_dependent_controls(qtbot):
     widget = ExportTextLayoutSettings()
     qtbot.addWidget(widget)
-    qtbot.mouseClick(widget.enabled_cb, Qt.MouseButton.LeftButton)
+    widget.enabled_cb.setChecked(True)
 
     assert widget.max_lines_spin.isEnabled() is True
     assert widget.min_font_size_spin.isEnabled() is True
 
-    qtbot.mouseClick(widget.wrap_cb, Qt.MouseButton.LeftButton)
+    widget.wrap_cb.setChecked(False)
     assert widget.max_lines_spin.isEnabled() is False
     assert widget.ellipsis_cb.isEnabled() is False
 
-    qtbot.mouseClick(widget.shrink_cb, Qt.MouseButton.LeftButton)
+    widget.shrink_cb.setChecked(False)
     assert widget.min_font_size_spin.isEnabled() is False
