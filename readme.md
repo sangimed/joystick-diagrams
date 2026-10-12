@@ -73,11 +73,13 @@ A starter template is included for creating custom device layouts using [draw.io
 
 1. **Setup.** Install the app, add your game plugins, point each at the game's config folder. Profiles and devices are discovered automatically.
 2. **Customise.** Browse profiles by game and aircraft. Rename actions with custom labels. Hide devices you don't need.
-3. **Export.** Pick your profiles, choose a template for each device, select SVG or PNG, hit Export. Diagrams land in your chosen folder.
+3. **Export.** Pick your profiles, choose a template for each device, tune the live preview if needed, select SVG or PNG, then export.
 
 ### Smart export text layout
 
 Long game action names can be automatically fitted into template label boxes. The feature is opt-in under **Settings → General → Export Text Layout**, so existing exports remain unchanged until it is enabled.
+
+The **Export** page also includes an in-memory live SVG preview. Selecting a profile renders the same `populate_template()` result that will be written during the real export. Text-layout controls are available next to the preview and persist to the same core settings, with a short debounce so font size, wrapping, line-count, and ellipsis changes update almost immediately. The preview supports mouse panning, wheel zoom, `+`/`−` controls, and **Fit**.
 
 The core export engine can:
 
