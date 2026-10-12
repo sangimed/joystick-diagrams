@@ -291,7 +291,7 @@ def test_settings_reader_parses_and_clamps_stored_values():
 
     with patch(
         "joystick_diagrams.db.db_settings.get_setting",
-        side_effect=lambda key: stored.get(key),
+        side_effect=stored.get,
     ):
         options = get_text_layout_options()
 
