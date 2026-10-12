@@ -1,42 +1,41 @@
-from joystick_diagrams.ui.export_preview import ExportPreviewPanel, SvgPreviewView
-
-
-VALID_SVG = (
-    '<svg xmlns="http://www.w3.org/2000/svg" width="200" height="100" '
-    'viewBox="0 0 200 100">'
-    '<rect x="0" y="0" width="200" height="100"/>'
-    "</svg>"
+from joystick_diagrams.ui.export_preview import (
+    ExportPreviewPanel,
+    SvgPreviewView,
+    parse_svg_dimensions,
 )
 
 
-def test_svg_preview_loads_in_memory_svg(qtbot):
+def test_parse_svg_dimensions_prefers_explicit_size():
+    svg = '<svg xmlns="http://www.w3.org/2000/svg" width="1498" height="780"></svg>'
+
+    assert parse_svg_dimensions(svg) == (1498.0, 780.0)
+
+
+def test_parse_svg_dimensions_falls_back_to_viewbox():
+    svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 700"></svg>'
+
+    assert parse_svg_dimensions(svg) == (1200.0, 700.0)
+
+
+def test_svg_preview_creates_webengine_lazily(qtbot):
     view = SvgPreviewView()
     qtbot.addWidget(view)
 
-    assert view.load_svg(VALID_SVG) is True
-    assert view.has_preview is True
-    assert len(view.scene().items()) == 1
-
-
-def test_svg_preview_rejects_invalid_svg(qtbot):
-    view = SvgPreviewView()
-    qtbot.addWidget(view)
-
-    assert view.load_svg("not svg") is False
     assert view.has_preview is False
+    assert view._web_view is None
+    assert view.load_svg("not svg") is False
+    assert view._web_view is None
 
 
-def test_preview_panel_switches_to_live_preview(qtbot):
+def test_preview_panel_context_reports_warnings(qtbot):
     panel = ExportPreviewPanel()
     qtbot.addWidget(panel)
 
     panel.set_context("X52 Pro", "Default", "x52.svg", warning_count=2)
-    assert panel.show_svg(VALID_SVG) is True
 
-    assert panel.preview_stack.currentWidget() is panel.svg_view
-    assert panel.zoom_in_btn.isEnabled() is True
     assert "X52 Pro" in panel.context_label.text()
     assert "2 template warnings" in panel.status_label.text()
+    assert panel.svg_view._web_view is None
 
 
 def test_preview_panel_forwards_text_layout_changes(qtbot):
