@@ -1,13 +1,11 @@
-"""Live SVG preview widgets for the Export page."""
+"""Live Chromium-backed SVG preview widgets for the Export page."""
 
-from PySide6.QtCore import QByteArray, QTimer, Qt, Signal
-from PySide6.QtGui import QPainter
-from PySide6.QtSvg import QSvgRenderer
-from PySide6.QtSvgWidgets import QGraphicsSvgItem
+import re
+
+from PySide6.QtCore import QByteArray, QTimer, Qt, QUrl, Signal
+from PySide6.QtWebEngineWidgets import QWebEngineView
 from PySide6.QtWidgets import (
     QFrame,
-    QGraphicsScene,
-    QGraphicsView,
     QHBoxLayout,
     QLabel,
     QPushButton,
@@ -22,26 +20,124 @@ from joystick_diagrams.export_text_layout import get_text_layout_options
 from joystick_diagrams.ui.export_text_layout_settings import ExportTextLayoutSettings
 
 
-class SvgPreviewView(QGraphicsView):
-    """Pan/zoom SVG view backed by the same SVG text used for file export."""
+_DIMENSION_RE = re.compile(r"^\s*([0-9]+(?:\.[0-9]+)?)")
+_VIEWBOX_RE = re.compile(
+    r"\bviewBox\s*=\s*(['\"])\s*[-+0-9.eE]+\s+[-+0-9.eE]+\s+"
+    r"([-+0-9.eE]+)\s+([-+0-9.eE]+)\s*\1",
+    flags=re.IGNORECASE,
+)
 
-    zoom_changed = Signal(int)
+
+def _parse_dimension(value: str | None) -> float | None:
+    if not value:
+        return None
+    match = _DIMENSION_RE.match(value)
+    if not match:
+        return None
+    try:
+        return float(match.group(1))
+    except ValueError:
+        return None
+
+
+def parse_svg_dimensions(svg_data: str) -> tuple[float, float]:
+    """Best-effort SVG dimensions for Fit; rendering remains Chromium-owned."""
+    root_match = re.search(r"<svg\b(?P<attrs>[^>]*)>", svg_data, re.IGNORECASE)
+    if not root_match:
+        return (800.0, 600.0)
+
+    attrs = root_match.group("attrs")
+
+    def attribute(name: str) -> str | None:
+        match = re.search(
+            rf"\b{re.escape(name)}\s*=\s*(['\"])(.*?)\1",
+            attrs,
+            flags=re.IGNORECASE | re.DOTALL,
+        )
+        return match.group(2) if match else None
+
+    width = _parse_dimension(attribute("width"))
+    height = _parse_dimension(attribute("height"))
+    if width and height:
+        return (width, height)
+
+    viewbox = _VIEWBOX_RE.search(root_match.group(0))
+    if viewbox:
+        try:
+            viewbox_width = float(viewbox.group(2))
+            viewbox_height = float(viewbox.group(3))
+            if viewbox_width > 0 and viewbox_height > 0:
+                return (viewbox_width, viewbox_height)
+        except ValueError:
+            pass
+
+    return (800.0, 600.0)
+
+
+class _PreviewWebView(QWebEngineView):
+    """QWebEngineView with drag-to-pan and wheel-to-zoom controls."""
+
+    zoom_requested = Signal(float)
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self._renderer: QSvgRenderer | None = None
-        self._item: QGraphicsSvgItem | None = None
-        self._auto_fit = True
+        self._panning = False
+        self._last_pos = None
+        self.setCursor(Qt.CursorShape.OpenHandCursor)
 
-        self.setScene(QGraphicsScene(self))
-        self.setDragMode(QGraphicsView.DragMode.ScrollHandDrag)
-        self.setTransformationAnchor(QGraphicsView.ViewportAnchor.AnchorUnderMouse)
-        self.setResizeAnchor(QGraphicsView.ViewportAnchor.AnchorViewCenter)
-        self.setRenderHints(
-            QPainter.RenderHint.Antialiasing
-            | QPainter.RenderHint.TextAntialiasing
-            | QPainter.RenderHint.SmoothPixmapTransform
-        )
+    def wheelEvent(self, event) -> None:
+        self.zoom_requested.emit(1.15 if event.angleDelta().y() > 0 else 1 / 1.15)
+        event.accept()
+
+    def mousePressEvent(self, event) -> None:
+        if event.button() == Qt.MouseButton.LeftButton:
+            self._panning = True
+            self._last_pos = event.position()
+            self.setCursor(Qt.CursorShape.ClosedHandCursor)
+            event.accept()
+            return
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event) -> None:
+        if self._panning and self._last_pos is not None:
+            delta = event.position() - self._last_pos
+            self._last_pos = event.position()
+            self.page().runJavaScript(
+                f"window.scrollBy({-delta.x():.2f}, {-delta.y():.2f});"
+            )
+            event.accept()
+            return
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event) -> None:
+        if event.button() == Qt.MouseButton.LeftButton and self._panning:
+            self._panning = False
+            self._last_pos = None
+            self.setCursor(Qt.CursorShape.OpenHandCursor)
+            event.accept()
+            return
+        super().mouseReleaseEvent(event)
+
+
+class SvgPreviewView(QWidget):
+    """Pan/zoom SVG view using Chromium for draw.io ``foreignObject`` support."""
+
+    zoom_changed = Signal(int)
+    load_failed = Signal()
+
+    MIN_ZOOM = 0.25
+    MAX_ZOOM = 5.0
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._web_view: _PreviewWebView | None = None
+        self._svg_size = (800.0, 600.0)
+        self._has_preview = False
+        self._auto_fit = True
+        self._zoom_factor = 1.0
+
+        self._layout = QVBoxLayout(self)
+        self._layout.setContentsMargins(0, 0, 0, 0)
         self.setSizePolicy(
             QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
         )
@@ -49,48 +145,61 @@ class SvgPreviewView(QGraphicsView):
 
     @property
     def has_preview(self) -> bool:
-        return self._item is not None
+        return self._has_preview
+
+    def _ensure_web_view(self) -> _PreviewWebView:
+        if self._web_view is not None:
+            return self._web_view
+
+        view = _PreviewWebView(self)
+        view.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
+        )
+        view.zoom_requested.connect(self._zoom_by)
+        view.loadFinished.connect(self._on_load_finished)
+        self._layout.addWidget(view)
+        self._web_view = view
+        return view
 
     def load_svg(self, svg_data: str) -> bool:
-        """Load in-memory SVG text. Returns False when Qt rejects the document."""
-        renderer = QSvgRenderer(QByteArray(svg_data.encode("utf-8")), self)
-        if not renderer.isValid():
-            renderer.deleteLater()
+        """Render generated SVG bytes directly in Chromium without touching disk."""
+        if re.search(r"<svg\b", svg_data, re.IGNORECASE) is None:
             self.clear_preview()
             return False
 
-        scene = self.scene()
-        old_renderer = self._renderer
-        scene.clear()
-        if old_renderer is not None:
-            old_renderer.deleteLater()
-
-        self._renderer = renderer
-        self._item = QGraphicsSvgItem()
-        self._item.setSharedRenderer(renderer)
-        scene.addItem(self._item)
-        scene.setSceneRect(self._item.boundingRect())
-
+        self._svg_size = parse_svg_dimensions(svg_data)
+        self._has_preview = True
         self._auto_fit = True
-        QTimer.singleShot(0, self.fit_content)
+
+        view = self._ensure_web_view()
+        view.show()
+        view.setContent(
+            QByteArray(svg_data.encode("utf-8")),
+            "image/svg+xml",
+            QUrl("about:blank"),
+        )
         return True
 
     def clear_preview(self) -> None:
-        self.scene().clear()
-        if self._renderer is not None:
-            self._renderer.deleteLater()
-        self._renderer = None
-        self._item = None
-        self.resetTransform()
+        self._has_preview = False
+        self._auto_fit = True
+        self._zoom_factor = 1.0
+        if self._web_view is not None:
+            self._web_view.hide()
         self.zoom_changed.emit(100)
 
     def fit_content(self) -> None:
-        if self._item is None:
+        if not self._has_preview or self._web_view is None:
             return
-        self.resetTransform()
-        self.fitInView(self._item.boundingRect(), Qt.AspectRatioMode.KeepAspectRatio)
-        self._auto_fit = True
-        self._emit_zoom()
+
+        width, height = self._svg_size
+        viewport = self._web_view.viewport().size()
+        if width <= 0 or height <= 0 or viewport.width() <= 0 or viewport.height() <= 0:
+            return
+
+        factor = min(viewport.width() / width, viewport.height() / height) * 0.94
+        self._set_zoom_factor(factor, auto_fit=True)
+        self._web_view.page().runJavaScript("window.scrollTo(0, 0);")
 
     def zoom_in(self) -> None:
         self._zoom_by(1.2)
@@ -99,29 +208,32 @@ class SvgPreviewView(QGraphicsView):
         self._zoom_by(1 / 1.2)
 
     def _zoom_by(self, factor: float) -> None:
-        if self._item is None:
+        if not self._has_preview:
             return
-        current_scale = self.transform().m11()
-        proposed_scale = current_scale * factor
-        if proposed_scale < 0.03 or proposed_scale > 30:
-            return
-        self.scale(factor, factor)
-        self._auto_fit = False
-        self._emit_zoom()
+        self._set_zoom_factor(self._zoom_factor * factor, auto_fit=False)
 
-    def _emit_zoom(self) -> None:
-        self.zoom_changed.emit(max(1, round(self.transform().m11() * 100)))
-
-    def wheelEvent(self, event) -> None:
-        if self._item is None:
-            super().wheelEvent(event)
+    def _set_zoom_factor(self, factor: float, *, auto_fit: bool) -> None:
+        if self._web_view is None:
             return
-        self._zoom_by(1.15 if event.angleDelta().y() > 0 else 1 / 1.15)
-        event.accept()
+        clamped = min(self.MAX_ZOOM, max(self.MIN_ZOOM, factor))
+        self._zoom_factor = clamped
+        self._auto_fit = auto_fit
+        self._web_view.setZoomFactor(clamped)
+        self.zoom_changed.emit(round(clamped * 100))
+
+    def _on_load_finished(self, ok: bool) -> None:
+        if not self._has_preview:
+            return
+        if not ok:
+            self._has_preview = False
+            self.load_failed.emit()
+            return
+        if self._auto_fit:
+            QTimer.singleShot(0, self.fit_content)
 
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
-        if self._auto_fit and self._item is not None:
+        if self._auto_fit and self._has_preview:
             QTimer.singleShot(0, self.fit_content)
 
 
@@ -210,6 +322,7 @@ class ExportPreviewPanel(QWidget):
         self.preview_stack.addWidget(self.empty_label)
 
         self.svg_view = SvgPreviewView()
+        self.svg_view.load_failed.connect(self._on_preview_load_failed)
         self.preview_stack.addWidget(self.svg_view)
         preview_layout.addWidget(self.preview_stack, 1)
 
@@ -250,12 +363,12 @@ class ExportPreviewPanel(QWidget):
             else ""
         )
         self.status_label.setText(
-            f"{mode} · live preview · exact export pipeline{warning_text}"
+            f"{mode} · live Chromium preview · exact export pipeline{warning_text}"
         )
 
     def show_svg(self, svg_data: str) -> bool:
         if not self.svg_view.load_svg(svg_data):
-            self.show_empty("The generated SVG could not be rendered by Qt.")
+            self.show_empty("The generated SVG could not be loaded for preview.")
             return False
         self.preview_stack.setCurrentWidget(self.svg_view)
         self._set_zoom_controls_enabled(True)
@@ -266,6 +379,9 @@ class ExportPreviewPanel(QWidget):
         self.empty_label.setText(message)
         self.preview_stack.setCurrentWidget(self.empty_label)
         self._set_zoom_controls_enabled(False)
+
+    def _on_preview_load_failed(self) -> None:
+        self.show_empty("Chromium could not render the generated SVG preview.")
 
     def _set_zoom_controls_enabled(self, enabled: bool) -> None:
         self.zoom_out_btn.setEnabled(enabled)
