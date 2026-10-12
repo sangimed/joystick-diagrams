@@ -1,5 +1,3 @@
-from PySide6.QtCore import Qt
-
 from joystick_diagrams.db.db_settings import get_setting
 from joystick_diagrams.export_text_layout import (
     TEXT_FONT_SIZE_SETTING_KEY,
