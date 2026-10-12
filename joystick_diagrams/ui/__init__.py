@@ -1,9 +1,8 @@
 """UI package exports."""
 
-# MainWindow imports these modules from this package. Point the public names at
-# small extensions so the large existing pages remain untouched and the feature
-# stays easy to review/rebase.
-from joystick_diagrams.ui import export_page_extended as export_page
+# MainWindow imports ``settings_page`` from this package. Point that public module
+# name at the small extension so the existing settings implementation stays
+# untouched while core export-text controls are added to the General tab.
 from joystick_diagrams.ui import settings_page_extended as settings_page
 
-__all__ = ["export_page", "settings_page"]
+__all__ = ["settings_page"]
