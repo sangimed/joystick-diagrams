@@ -15,5 +15,11 @@ class SettingsPage(BaseSettingsPage):
         tab = super()._create_general_tab()
         layout = tab.layout()
         insert_at = max(0, layout.count() - 1)
-        layout.insertWidget(insert_at, ExportTextLayoutSettings(tab))
+        self.export_text_layout_settings = ExportTextLayoutSettings(tab)
+        layout.insertWidget(insert_at, self.export_text_layout_settings)
         return tab
+
+    def refresh(self):
+        super().refresh()
+        if hasattr(self, "export_text_layout_settings"):
+            self.export_text_layout_settings.reload_from_settings()
