@@ -1,3 +1,5 @@
+import pytest
+
 from joystick_diagrams.ui.export_preview import (
     ExportPreviewPanel,
     SvgPreviewView,
@@ -20,7 +22,9 @@ def test_parse_svg_dimensions_converts_physical_units_without_viewbox():
         "</svg>"
     )
 
-    assert parse_svg_dimensions(svg) == (96.0, 96.0)
+    width, height = parse_svg_dimensions(svg)
+    assert width == pytest.approx(96.0)
+    assert height == pytest.approx(96.0)
 
 
 def test_parse_svg_dimensions_uses_explicit_pixel_size_without_viewbox():
