@@ -5,16 +5,34 @@ from joystick_diagrams.ui.export_preview import (
 )
 
 
-def test_parse_svg_dimensions_prefers_explicit_size():
+def test_parse_svg_dimensions_prefers_viewbox_over_physical_size():
+    svg = (
+        '<svg xmlns="http://www.w3.org/2000/svg" width="396.35mm" height="206.38mm" '
+        'viewBox="0 0 1498 780"></svg>'
+    )
+
+    assert parse_svg_dimensions(svg) == (1498.0, 780.0)
+
+
+def test_parse_svg_dimensions_converts_physical_units_without_viewbox():
+    svg = (
+        '<svg xmlns="http://www.w3.org/2000/svg" width="25.4mm" height="2.54cm">'
+        "</svg>"
+    )
+
+    assert parse_svg_dimensions(svg) == (96.0, 96.0)
+
+
+def test_parse_svg_dimensions_uses_explicit_pixel_size_without_viewbox():
     svg = '<svg xmlns="http://www.w3.org/2000/svg" width="1498" height="780"></svg>'
 
     assert parse_svg_dimensions(svg) == (1498.0, 780.0)
 
 
-def test_parse_svg_dimensions_falls_back_to_viewbox():
-    svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 700"></svg>'
+def test_parse_svg_dimensions_falls_back_to_default():
+    svg = '<svg xmlns="http://www.w3.org/2000/svg"></svg>'
 
-    assert parse_svg_dimensions(svg) == (1200.0, 700.0)
+    assert parse_svg_dimensions(svg) == (800.0, 600.0)
 
 
 def test_svg_preview_creates_webengine_lazily(qtbot):
@@ -36,6 +54,29 @@ def test_preview_panel_context_reports_warnings(qtbot):
     assert "X52 Pro" in panel.context_label.text()
     assert "2 template warnings" in panel.status_label.text()
     assert panel.svg_view._web_view is None
+
+
+def test_text_layout_panel_is_collapsed_by_default(qtbot):
+    panel = ExportPreviewPanel()
+    qtbot.addWidget(panel)
+
+    assert panel.text_layout_btn.isCheckable() is True
+    assert panel.text_layout_btn.isChecked() is False
+    assert panel.controls_frame.isHidden() is True
+
+
+def test_text_layout_button_toggles_controls_without_hiding_preview(qtbot):
+    panel = ExportPreviewPanel()
+    qtbot.addWidget(panel)
+
+    panel.text_layout_btn.click()
+
+    assert panel.controls_frame.isHidden() is False
+    assert panel.preview_stack.isVisibleTo(panel) is True
+
+    panel.text_layout_btn.click()
+
+    assert panel.controls_frame.isHidden() is True
 
 
 def test_preview_panel_forwards_text_layout_changes(qtbot):
