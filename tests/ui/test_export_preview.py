@@ -56,6 +56,10 @@ def test_preview_panel_context_reports_warnings(qtbot):
     assert panel.svg_view._web_view is None
 
 
+def test_preview_panel_prefers_compact_device_pane():
+    assert ExportPreviewPanel.PREFERRED_DEVICE_PANE_PX == 340
+
+
 def test_text_layout_panel_is_collapsed_by_default(qtbot):
     panel = ExportPreviewPanel()
     qtbot.addWidget(panel)
