@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (
     QPushButton,
     QScrollArea,
     QSizePolicy,
+    QSplitter,
     QStackedWidget,
     QVBoxLayout,
     QWidget,
@@ -312,9 +313,11 @@ class ExportPreviewPanel(QWidget):
     """Collapsible text-layout controls and a preview-first SVG workspace."""
 
     settings_changed = Signal()
+    PREFERRED_DEVICE_PANE_PX = 340
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self._splitter_sized = False
 
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
@@ -423,6 +426,28 @@ class ExportPreviewPanel(QWidget):
         self.svg_view.zoom_changed.connect(self._on_zoom_changed)
 
         self.show_empty("Select a profile to preview its generated diagram.")
+
+    def showEvent(self, event) -> None:
+        super().showEvent(event)
+        if self._splitter_sized:
+            return
+
+        splitter = self.parentWidget()
+        if not isinstance(splitter, QSplitter) or splitter.count() < 2:
+            return
+
+        total_width = max(splitter.width(), sum(splitter.sizes()))
+        if total_width <= 0:
+            return
+
+        device_width = min(
+            self.PREFERRED_DEVICE_PANE_PX,
+            max(280, total_width - self.svg_view.minimumWidth()),
+        )
+        splitter.setStretchFactor(0, 0)
+        splitter.setStretchFactor(1, 1)
+        splitter.setSizes([device_width, max(1, total_width - device_width)])
+        self._splitter_sized = True
 
     def reload_settings(self) -> None:
         self.layout_settings.reload_from_settings()
