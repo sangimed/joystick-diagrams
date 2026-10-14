@@ -1,7 +1,7 @@
 """Live Chromium-backed SVG preview widgets for the Export page."""
 
-import re
 from pathlib import Path
+import re
 
 from PySide6.QtCore import QTemporaryDir, QTimer, Qt, QUrl, Signal
 from PySide6.QtWebEngineWidgets import QWebEngineView
