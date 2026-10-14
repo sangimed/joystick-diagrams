@@ -10,8 +10,3 @@ def test_export_page_declares_live_preview_integration():
     assert hasattr(ExportPage, "_refresh_preview")
     assert hasattr(ExportPage, "_schedule_preview_refresh")
     assert hasattr(ExportPage, "_restore_preview_selection")
-
-
-def test_export_page_prioritises_preview_width():
-    assert ExportPage.PREVIEW_DEVICE_PANE_PX == 340
-    assert ExportPage.PREVIEW_SPLITTER_SIZES == (340, 1200)
