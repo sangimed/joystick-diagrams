@@ -6,11 +6,9 @@ from PySide6.QtCore import QSignalBlocker, Qt, Signal
 from PySide6.QtWidgets import (
     QCheckBox,
     QFormLayout,
-    QGridLayout,
     QHBoxLayout,
     QLabel,
     QPushButton,
-    QSizePolicy,
     QSpinBox,
     QVBoxLayout,
     QWidget,
@@ -48,11 +46,37 @@ class ExportTextLayoutSettings(QWidget):
         super().__init__(parent)
         self.compact = compact
 
-        self.enabled_cb = QCheckBox("Auto-fit" if compact else "Auto-fit binding labels")
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(8 if compact else 10)
+
+        if compact:
+            title = QLabel("Text layout")
+            title.setStyleSheet("font-weight: 600;")
+            layout.addWidget(title)
+        else:
+            layout.addWidget(SectionHeader("fa5s.font", "Export Text Layout"))
+
+            help_text = QLabel(
+                "Optionally fit long binding names into template label boxes. "
+                "The export engine can wrap text, shrink the font, and truncate only "
+                "when you explicitly enable ellipsis. These settings affect exported "
+                "binding labels only; template titles and static text are unchanged."
+            )
+            help_text.setObjectName("device_help_label")
+            help_text.setWordWrap(True)
+            layout.addWidget(help_text)
+
+        form = QFormLayout()
+        form.setSpacing(8 if compact else 10)
+        form.setContentsMargins(0, 0, 0, 0)
+
+        self.enabled_cb = QCheckBox("Auto-fit binding labels")
         self.enabled_cb.setToolTip(
             "Enable smart layout for BUTTON, AXIS, POV and modifier action labels "
             "inserted during export. Disabled preserves the legacy export exactly."
         )
+        form.addRow("", self.enabled_cb)
 
         self.font_size_spin = QSpinBox()
         self.font_size_spin.setRange(0, 48)
@@ -62,18 +86,23 @@ class ExportTextLayoutSettings(QWidget):
             "Override the template font size for dynamic labels. Leave at 'Use template' "
             "to preserve each template's font size until shrinking is needed."
         )
+        form.addRow(self._label("Base label font size"), self._row(self.font_size_spin))
 
-        self.wrap_cb = QCheckBox("Wrap" if compact else "Wrap long labels")
+        self.wrap_cb = QCheckBox("Wrap long labels")
         self.wrap_cb.setToolTip(
             "Split long labels across lines. Action separators (|) are preferred as "
             "line-break opportunities before normal word wrapping."
         )
+        form.addRow("", self.wrap_cb)
 
         self.max_chars_spin = QSpinBox()
         self.max_chars_spin.setRange(4, 120)
         self.max_chars_spin.setToolTip(
             "Approximate number of characters that fit on one line at the base font size. "
             "This is template-independent and also drives auto-shrink."
+        )
+        form.addRow(
+            self._label("Characters per line"), self._row(self.max_chars_spin)
         )
 
         self.max_lines_spin = QSpinBox()
@@ -82,14 +111,14 @@ class ExportTextLayoutSettings(QWidget):
             "Target maximum line count. Auto-shrink tries smaller font sizes before "
             "allowing additional lines. Ellipsis makes this a hard limit."
         )
+        form.addRow(self._label("Maximum lines"), self._row(self.max_lines_spin))
 
-        self.shrink_cb = QCheckBox(
-            "Shrink" if compact else "Shrink font when wrapping is not enough"
-        )
+        self.shrink_cb = QCheckBox("Shrink font when wrapping is not enough")
         self.shrink_cb.setToolTip(
             "Reduce long labels one pixel at a time until they reach the requested "
             "line count or the minimum font size."
         )
+        form.addRow("", self.shrink_cb)
 
         self.min_font_size_spin = QSpinBox()
         self.min_font_size_spin.setRange(5, 48)
@@ -97,31 +126,36 @@ class ExportTextLayoutSettings(QWidget):
         self.min_font_size_spin.setToolTip(
             "Smallest font size auto-shrink is allowed to use."
         )
-
-        self.ellipsis_cb = QCheckBox(
-            "Ellipsis" if compact else "Use ellipsis if text still does not fit"
+        form.addRow(
+            self._label("Minimum font size"), self._row(self.min_font_size_spin)
         )
+
+        self.ellipsis_cb = QCheckBox("Use ellipsis if text still does not fit")
         self.ellipsis_cb.setToolTip(
             "When enabled, text that still exceeds the maximum line count at the "
             "minimum font size is truncated with an ellipsis. Disabled keeps all text."
         )
+        form.addRow("", self.ellipsis_cb)
 
-        self.reset_defaults_btn = QPushButton("Reset" if compact else "Reset defaults")
+        layout.addLayout(form)
+
+        actions = QHBoxLayout()
+        actions.setContentsMargins(0, 2, 0, 0)
+        actions.setSpacing(6)
+
+        self.reset_defaults_btn = QPushButton("Reset defaults")
         self.reset_defaults_btn.setToolTip(
             "Restore the built-in export text layout defaults."
         )
+        actions.addWidget(self.reset_defaults_btn)
 
-        self.use_template_font_btn = QPushButton(
-            "Template font" if compact else "Use template font"
-        )
+        self.use_template_font_btn = QPushButton("Use template font")
         self.use_template_font_btn.setToolTip(
             "Stop overriding the template font size while keeping the other text layout settings."
         )
-
-        if compact:
-            self._build_compact_ui()
-        else:
-            self._build_full_ui()
+        actions.addWidget(self.use_template_font_btn)
+        actions.addStretch(1)
+        layout.addLayout(actions)
 
         self.enabled_cb.stateChanged.connect(self._on_enabled_changed)
         self.font_size_spin.valueChanged.connect(
@@ -145,115 +179,6 @@ class ExportTextLayoutSettings(QWidget):
         self.use_template_font_btn.clicked.connect(self.use_template_font)
 
         self.reload_from_settings()
-
-    def _build_compact_ui(self) -> None:
-        """Build the two-row horizontal controls used by the Export header."""
-        self.setSizePolicy(
-            QSizePolicy.Policy.Expanding,
-            QSizePolicy.Policy.Fixed,
-        )
-        self.setMaximumHeight(104)
-
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(4)
-
-        title = QLabel("Text layout")
-        title.setStyleSheet("font-weight: 600;")
-        layout.addWidget(title)
-
-        self.font_size_spin.setMaximumWidth(112)
-        self.max_chars_spin.setMaximumWidth(64)
-        self.max_lines_spin.setMaximumWidth(58)
-        self.min_font_size_spin.setMaximumWidth(72)
-
-        self.quick_grid = QGridLayout()
-        self.quick_grid.setContentsMargins(0, 0, 0, 0)
-        self.quick_grid.setHorizontalSpacing(10)
-        self.quick_grid.setVerticalSpacing(4)
-
-        self.quick_grid.addWidget(self.enabled_cb, 0, 0)
-        self.quick_grid.addWidget(
-            self._compact_field("Font", self.font_size_spin), 0, 1
-        )
-        self.quick_grid.addWidget(self.wrap_cb, 0, 2)
-        self.quick_grid.addWidget(
-            self._compact_field("Chars", self.max_chars_spin), 0, 3
-        )
-        self.quick_grid.addWidget(
-            self._compact_field("Lines", self.max_lines_spin), 0, 4
-        )
-
-        self.quick_grid.addWidget(self.shrink_cb, 1, 0)
-        self.quick_grid.addWidget(
-            self._compact_field("Min font", self.min_font_size_spin), 1, 1
-        )
-        self.quick_grid.addWidget(self.ellipsis_cb, 1, 2)
-
-        actions = QWidget()
-        actions_layout = QHBoxLayout(actions)
-        actions_layout.setContentsMargins(0, 0, 0, 0)
-        actions_layout.setSpacing(6)
-        actions_layout.addWidget(self.reset_defaults_btn)
-        actions_layout.addWidget(self.use_template_font_btn)
-        self.quick_grid.addWidget(actions, 1, 3, 1, 2)
-
-        self.quick_grid.setColumnStretch(4, 1)
-        layout.addLayout(self.quick_grid)
-
-    def _build_full_ui(self) -> None:
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(10)
-
-        layout.addWidget(SectionHeader("fa5s.font", "Export Text Layout"))
-
-        help_text = QLabel(
-            "Optionally fit long binding names into template label boxes. "
-            "The export engine can wrap text, shrink the font, and truncate only "
-            "when you explicitly enable ellipsis. These settings affect exported "
-            "binding labels only; template titles and static text are unchanged."
-        )
-        help_text.setObjectName("device_help_label")
-        help_text.setWordWrap(True)
-        layout.addWidget(help_text)
-
-        form = QFormLayout()
-        form.setSpacing(10)
-        form.setContentsMargins(0, 0, 0, 0)
-        form.addRow("", self.enabled_cb)
-        form.addRow(self._label("Base label font size"), self._row(self.font_size_spin))
-        form.addRow("", self.wrap_cb)
-        form.addRow(
-            self._label("Characters per line"), self._row(self.max_chars_spin)
-        )
-        form.addRow(self._label("Maximum lines"), self._row(self.max_lines_spin))
-        form.addRow("", self.shrink_cb)
-        form.addRow(
-            self._label("Minimum font size"), self._row(self.min_font_size_spin)
-        )
-        form.addRow("", self.ellipsis_cb)
-        layout.addLayout(form)
-
-        actions = QHBoxLayout()
-        actions.setContentsMargins(0, 2, 0, 0)
-        actions.setSpacing(6)
-        actions.addWidget(self.reset_defaults_btn)
-        actions.addWidget(self.use_template_font_btn)
-        actions.addStretch(1)
-        layout.addLayout(actions)
-
-    @staticmethod
-    def _compact_field(text: str, widget: QWidget) -> QWidget:
-        container = QWidget()
-        row = QHBoxLayout(container)
-        row.setContentsMargins(0, 0, 0, 0)
-        row.setSpacing(4)
-        label = QLabel(text)
-        label.setObjectName("device_help_label")
-        row.addWidget(label)
-        row.addWidget(widget)
-        return container
 
     @staticmethod
     def _label(text: str) -> QLabel:

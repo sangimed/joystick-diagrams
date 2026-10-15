@@ -1,5 +1,3 @@
-from PySide6.QtWidgets import QGridLayout
-
 from joystick_diagrams.db.db_settings import get_setting
 from joystick_diagrams.export_text_layout import (
     TEXT_FONT_SIZE_SETTING_KEY,
@@ -65,13 +63,3 @@ def test_wrap_and_shrink_toggle_dependent_controls(qtbot):
 
     widget.shrink_cb.setChecked(False)
     assert widget.min_font_size_spin.isEnabled() is False
-
-
-def test_compact_text_layout_is_a_bounded_horizontal_header(qtbot):
-    widget = ExportTextLayoutSettings(compact=True)
-    qtbot.addWidget(widget)
-
-    assert isinstance(widget.quick_grid, QGridLayout)
-    assert widget.maximumHeight() <= 110
-    assert widget.sizePolicy().horizontalPolicy().name == "Expanding"
-    assert widget.sizePolicy().verticalPolicy().name == "Fixed"

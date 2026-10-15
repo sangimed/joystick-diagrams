@@ -64,11 +64,35 @@ def test_preview_panel_prefers_compact_device_pane():
     assert ExportPreviewPanel.PREFERRED_DEVICE_PANE_PX == 340
 
 
-def test_preview_panel_is_preview_only(qtbot):
+def test_text_layout_panel_is_collapsed_by_default(qtbot):
     panel = ExportPreviewPanel()
     qtbot.addWidget(panel)
 
-    assert not hasattr(panel, "layout_settings")
-    assert not hasattr(panel, "controls_frame")
-    assert not hasattr(panel, "text_layout_btn")
-    assert panel.preview_stack.minimumWidth() >= 0
+    assert panel.text_layout_btn.isCheckable() is True
+    assert panel.text_layout_btn.isChecked() is False
+    assert panel.controls_frame.isHidden() is True
+
+
+def test_text_layout_button_toggles_controls_without_hiding_preview(qtbot):
+    panel = ExportPreviewPanel()
+    qtbot.addWidget(panel)
+
+    panel.text_layout_btn.click()
+
+    assert panel.controls_frame.isHidden() is False
+    assert panel.preview_stack.isVisibleTo(panel) is True
+
+    panel.text_layout_btn.click()
+
+    assert panel.controls_frame.isHidden() is True
+
+
+def test_preview_panel_forwards_text_layout_changes(qtbot):
+    panel = ExportPreviewPanel()
+    qtbot.addWidget(panel)
+    changes = []
+    panel.settings_changed.connect(lambda: changes.append(True))
+
+    panel.layout_settings.enabled_cb.setChecked(True)
+
+    assert changes
