@@ -10,7 +10,6 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QPushButton,
-    QScrollArea,
     QSizePolicy,
     QSplitter,
     QStackedWidget,
@@ -19,7 +18,6 @@ from PySide6.QtWidgets import (
 )
 
 from joystick_diagrams.export_text_layout import get_text_layout_options
-from joystick_diagrams.ui.export_text_layout_settings import ExportTextLayoutSettings
 
 
 _DIMENSION_RE = re.compile(r"^\s*([0-9]+(?:\.[0-9]+)?)\s*([a-zA-Z%]*)")
@@ -310,9 +308,8 @@ class SvgPreviewView(QWidget):
 
 
 class ExportPreviewPanel(QWidget):
-    """Collapsible text-layout controls and a preview-first SVG workspace."""
+    """Preview-first SVG workspace used by the Export page."""
 
-    settings_changed = Signal()
     PREFERRED_DEVICE_PANE_PX = 340
 
     def __init__(self, parent=None):
@@ -335,33 +332,6 @@ class ExportPreviewPanel(QWidget):
         header.addWidget(self.context_label)
         root.addLayout(header)
 
-        body = QHBoxLayout()
-        body.setContentsMargins(0, 0, 0, 0)
-        body.setSpacing(8)
-
-        self.controls_frame = QFrame()
-        self.controls_frame.setMinimumWidth(300)
-        self.controls_frame.setMaximumWidth(360)
-        controls_layout = QVBoxLayout(self.controls_frame)
-        controls_layout.setContentsMargins(8, 8, 8, 8)
-        controls_layout.setSpacing(0)
-
-        self.layout_settings = ExportTextLayoutSettings(
-            self.controls_frame, compact=True
-        )
-        self.layout_settings.settings_changed.connect(self.settings_changed.emit)
-
-        controls_scroll = QScrollArea()
-        controls_scroll.setWidgetResizable(True)
-        controls_scroll.setFrameShape(QFrame.Shape.NoFrame)
-        controls_scroll.setHorizontalScrollBarPolicy(
-            Qt.ScrollBarPolicy.ScrollBarAlwaysOff
-        )
-        controls_scroll.setWidget(self.layout_settings)
-        controls_layout.addWidget(controls_scroll)
-        self.controls_frame.hide()
-        body.addWidget(self.controls_frame, 0)
-
         preview_frame = QFrame()
         preview_layout = QVBoxLayout(preview_frame)
         preview_layout.setContentsMargins(0, 0, 0, 0)
@@ -370,12 +340,6 @@ class ExportPreviewPanel(QWidget):
         toolbar = QHBoxLayout()
         toolbar.setContentsMargins(0, 0, 0, 0)
         toolbar.setSpacing(6)
-
-        self.text_layout_btn = QPushButton("Text layout")
-        self.text_layout_btn.setCheckable(True)
-        self.text_layout_btn.setChecked(False)
-        self.text_layout_btn.setToolTip("Show or hide live text layout controls")
-        toolbar.addWidget(self.text_layout_btn)
         toolbar.addStretch(1)
 
         self.zoom_out_btn = QPushButton("-")
@@ -416,10 +380,8 @@ class ExportPreviewPanel(QWidget):
         self.status_label.setWordWrap(True)
         preview_layout.addWidget(self.status_label)
 
-        body.addWidget(preview_frame, 1)
-        root.addLayout(body, 1)
+        root.addWidget(preview_frame, 1)
 
-        self.text_layout_btn.toggled.connect(self._set_text_layout_visible)
         self.zoom_out_btn.clicked.connect(self.svg_view.zoom_out)
         self.zoom_in_btn.clicked.connect(self.svg_view.zoom_in)
         self.fit_btn.clicked.connect(self.svg_view.fit_content)
@@ -448,15 +410,6 @@ class ExportPreviewPanel(QWidget):
         splitter.setStretchFactor(1, 1)
         splitter.setSizes([device_width, max(1, total_width - device_width)])
         self._splitter_sized = True
-
-    def reload_settings(self) -> None:
-        self.layout_settings.reload_from_settings()
-
-    def _set_text_layout_visible(self, visible: bool) -> None:
-        self.controls_frame.setVisible(visible)
-        # Let the Chromium viewport settle before recomputing a fitted preview.
-        if self.svg_view.has_preview and self.svg_view._auto_fit:
-            QTimer.singleShot(0, self.svg_view.fit_content)
 
     def set_context(
         self,
