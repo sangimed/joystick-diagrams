@@ -10,3 +10,8 @@ def test_export_page_declares_live_preview_integration():
     assert hasattr(ExportPage, "_refresh_preview")
     assert hasattr(ExportPage, "_schedule_preview_refresh")
     assert hasattr(ExportPage, "_restore_preview_selection")
+
+
+def test_export_page_declares_header_text_layout_workspace():
+    assert ExportPage.HEADER_HELP_MAX_WIDTH == 300
+    assert hasattr(ExportPage, "_configure_header_controls")
