@@ -40,6 +40,7 @@ from joystick_diagrams.ui import main_window, ui_consts
 from joystick_diagrams.ui.device_setup import DeviceSetup
 from joystick_diagrams.ui.export_preview import ExportPreviewPanel
 from joystick_diagrams.ui.export_settings import ExportSettings
+from joystick_diagrams.ui.export_text_layout_settings import ExportTextLayoutSettings
 from joystick_diagrams.ui.qt_designer import export_ui
 from joystick_diagrams.ui.widgets.section_header import SectionHeader
 from joystick_diagrams.utils import install_root
@@ -49,6 +50,7 @@ _logger = logging.getLogger(__name__)
 
 class ExportPage(QMainWindow, export_ui.Ui_Form):
     PREVIEW_DEBOUNCE_MS = 180
+    HEADER_HELP_MAX_WIDTH = 300
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -74,9 +76,9 @@ class ExportPage(QMainWindow, export_ui.Ui_Form):
         self.setTemplateButton.setIcon(
             qta.icon("fa5s.file-code", color="white", color_disabled="white")
         )
-        self.setTemplateButton.setText("Select an item to set Template")
+        self.setTemplateButton.setText("Set template")
+        self.setTemplateButton.setToolTip("Select a device row to assign its SVG template")
         self.setTemplateButton.setProperty("class", "template-set-button")
-
         self.setTemplateButton.setDisabled(True)
 
         self.ExportButton.setIcon(
@@ -101,8 +103,9 @@ class ExportPage(QMainWindow, export_ui.Ui_Form):
         self._preview_timer.setInterval(self.PREVIEW_DEBOUNCE_MS)
         self._preview_timer.timeout.connect(self._refresh_preview)
 
+        self._configure_header_controls()
+
         self.preview_panel = ExportPreviewPanel(self)
-        self.preview_panel.settings_changed.connect(self._schedule_preview_refresh)
         self.device_widget.device_item_selected.connect(self._on_preview_item_selected)
         self.device_widget.devices_updated.connect(self._on_devices_updated)
 
@@ -186,6 +189,52 @@ class ExportPage(QMainWindow, export_ui.Ui_Form):
 
         QTimer.singleShot(0, self._select_initial_preview)
 
+    def _configure_header_controls(self) -> None:
+        """Use the wide Export header for live text-layout controls.
+
+        Keeping these controls above the device/preview splitter gives the Chromium
+        preview the full right-hand pane instead of permanently spending horizontal
+        space on a settings column.
+        """
+        self.device_help_label.setWordWrap(True)
+        self.device_help_label.setMaximumWidth(self.HEADER_HELP_MAX_WIDTH)
+        self.device_header_label.setMaximumWidth(self.HEADER_HELP_MAX_WIDTH)
+
+        self.device_controls_layout.removeWidget(self.setTemplateButton)
+
+        self.header_controls_widget = QWidget(self._centralWidget)
+        header_row = QHBoxLayout(self.header_controls_widget)
+        header_row.setContentsMargins(8, 0, 0, 0)
+        header_row.setSpacing(12)
+
+        self.export_text_layout_settings = ExportTextLayoutSettings(
+            self.header_controls_widget,
+            compact=True,
+        )
+        self.export_text_layout_settings.settings_changed.connect(
+            self._schedule_preview_refresh
+        )
+        header_row.addWidget(self.export_text_layout_settings, 1)
+
+        self.setTemplateButton.setParent(self.header_controls_widget)
+        self.setTemplateButton.setSizePolicy(
+            QSizePolicy.Policy.Preferred,
+            QSizePolicy.Policy.Fixed,
+        )
+        self.setTemplateButton.setMinimumWidth(210)
+        self.setTemplateButton.setMaximumWidth(300)
+        self.setTemplateButton.setMinimumHeight(36)
+        self.setTemplateButton.setMaximumHeight(40)
+        header_row.addWidget(
+            self.setTemplateButton,
+            0,
+            Qt.AlignmentFlag.AlignTop,
+        )
+
+        self.device_controls_layout.addWidget(self.header_controls_widget)
+        self.devices_header.setStretch(0, 0)
+        self.devices_header.setStretch(1, 1)
+
     def _make_plugin_chip(self, wrapper) -> QWidget:
         """Create a compact inline chip: status dot + name."""
         chip = QWidget()
@@ -233,7 +282,7 @@ class ExportPage(QMainWindow, export_ui.Ui_Form):
     def refresh(self):
         """Refresh dynamic state when navigating back to this page."""
         self._refresh_output_plugins_panel()
-        self.preview_panel.reload_settings()
+        self.export_text_layout_settings.reload_from_settings()
         QTimer.singleShot(0, self._restore_preview_selection)
 
     def _on_tree_double_click(self, index):
@@ -380,11 +429,15 @@ class ExportPage(QMainWindow, export_ui.Ui_Form):
     def change_template_button(self, data: QTreeWidgetItem):
         if data.parent():
             self.setTemplateButton.setDisabled(True)
-            self.setTemplateButton.setText("Select an item to set Template")
+            self.setTemplateButton.setText("Set template")
+            self.setTemplateButton.setToolTip(
+                "Select a device row to assign its SVG template"
+            )
+            return
 
-        if data.parent() is None:
-            self.setTemplateButton.setDisabled(False)
-            self.setTemplateButton.setText(f"Update template for {data.text(0)}")
+        self.setTemplateButton.setDisabled(False)
+        self.setTemplateButton.setText("Update template")
+        self.setTemplateButton.setToolTip(f"Update template for {data.text(0)}")
 
     def select_template(self):
         current_item = self.device_widget.treeWidget.currentItem()
