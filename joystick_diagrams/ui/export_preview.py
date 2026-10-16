@@ -93,8 +93,36 @@ def parse_svg_dimensions(svg_data: str) -> tuple[float, float]:
     return (800.0, 600.0)
 
 
+def wheel_navigation_mode(modifiers: Qt.KeyboardModifier) -> str:
+    """Map wheel modifiers to Photoshop-style preview navigation."""
+    if modifiers & Qt.KeyboardModifier.ControlModifier:
+        return "zoom"
+    if modifiers & Qt.KeyboardModifier.AltModifier:
+        return "horizontal"
+    return "vertical"
+
+
+def fit_zoom_factor(
+    *,
+    viewport_width: float,
+    viewport_height: float,
+    content_width: float,
+    content_height: float,
+    padding: float = 0.96,
+) -> float:
+    """Return the zoom needed to fit content inside a CSS-pixel viewport."""
+    if min(viewport_width, viewport_height, content_width, content_height) <= 0:
+        return 1.0
+
+    factor = min(
+        viewport_width / content_width,
+        viewport_height / content_height,
+    ) * padding
+    return min(1.0, max(0.01, factor))
+
+
 class _PreviewWebView(QWebEngineView):
-    """QWebEngineView with deterministic wheel zoom and drag-to-pan."""
+    """QWebEngineView with Photoshop-style wheel navigation and drag-to-pan."""
 
     zoom_requested = Signal(float)
 
@@ -107,7 +135,7 @@ class _PreviewWebView(QWebEngineView):
         QTimer.singleShot(0, self.install_wheel_filters)
 
     def install_wheel_filters(self) -> None:
-        """Intercept wheel events from Chromium's internal render widget too."""
+        """Intercept modified wheel gestures from Chromium's render widget."""
         targets = [self]
         focus_proxy = self.focusProxy()
         if focus_proxy is not None:
@@ -117,22 +145,48 @@ class _PreviewWebView(QWebEngineView):
         for target in targets:
             target.installEventFilter(self)
 
-    def _request_zoom_from_wheel(self, delta_y: int) -> bool:
-        if delta_y == 0:
+    @staticmethod
+    def _wheel_delta(event) -> int:
+        pixel_delta = event.pixelDelta()
+        if not pixel_delta.isNull():
+            if pixel_delta.y() != 0:
+                return pixel_delta.y()
+            if pixel_delta.x() != 0:
+                return pixel_delta.x()
+
+        angle_delta = event.angleDelta()
+        if angle_delta.y() != 0:
+            return angle_delta.y()
+        return angle_delta.x()
+
+    def _handle_modified_wheel(self, event) -> bool:
+        mode = wheel_navigation_mode(event.modifiers())
+        if mode == "vertical":
+            # Leave an unmodified wheel event entirely to Chromium so the page
+            # scrolls naturally, including touchpad/inertial scrolling.
             return False
-        self.zoom_requested.emit(1.15 if delta_y > 0 else 1 / 1.15)
+
+        delta = self._wheel_delta(event)
+        if delta == 0:
+            return False
+
+        if mode == "zoom":
+            self.zoom_requested.emit(1.15 if delta > 0 else 1 / 1.15)
+        else:
+            # Qt wheel-up is positive while browser scroll-right is positive, so
+            # invert the wheel delta to match normal vertical scrolling direction.
+            self.page().runJavaScript(f"window.scrollBy({-delta}, 0);")
+
+        event.accept()
         return True
 
     def eventFilter(self, watched, event) -> bool:
-        if event.type() == QEvent.Type.Wheel:
-            if self._request_zoom_from_wheel(event.angleDelta().y()):
-                event.accept()
-                return True
+        if event.type() == QEvent.Type.Wheel and self._handle_modified_wheel(event):
+            return True
         return super().eventFilter(watched, event)
 
     def wheelEvent(self, event) -> None:
-        if self._request_zoom_from_wheel(event.angleDelta().y()):
-            event.accept()
+        if self._handle_modified_wheel(event):
             return
         super().wheelEvent(event)
 
@@ -186,6 +240,7 @@ class SvgPreviewView(QWidget):
         self._has_preview = False
         self._auto_fit = True
         self._zoom_factor = 1.0
+        self._fit_request_id = 0
         self._temp_dir = QTemporaryDir()
         self._preview_path = (
             Path(self._temp_dir.path()) / "preview.svg"
@@ -242,6 +297,7 @@ class SvgPreviewView(QWidget):
         self._svg_size = parse_svg_dimensions(svg_data)
         self._has_preview = True
         self._auto_fit = True
+        self._fit_request_id += 1
 
         view = self._ensure_web_view()
         view.show()
@@ -249,6 +305,7 @@ class SvgPreviewView(QWidget):
         return True
 
     def clear_preview(self) -> None:
+        self._fit_request_id += 1
         self._has_preview = False
         self._auto_fit = True
         self._zoom_factor = 1.0
@@ -257,19 +314,66 @@ class SvgPreviewView(QWidget):
         self.zoom_changed.emit(100)
 
     def fit_content(self) -> None:
+        """Fit against Chromium's CSS viewport, avoiding Qt/HiDPI unit mismatch."""
         if not self._has_preview or self._web_view is None:
             return
 
-        width, height = self._svg_size
-        viewport = self._web_view.viewport().size()
-        if width <= 0 or height <= 0 or viewport.width() <= 0 or viewport.height() <= 0:
+        self._fit_request_id += 1
+        request_id = self._fit_request_id
+        self._auto_fit = True
+
+        # Browser zoom changes window.innerWidth/innerHeight. Reset to 100% first,
+        # then query Chromium's CSS-pixel viewport on the next event-loop turn.
+        self._web_view.setZoomFactor(1.0)
+        self._zoom_factor = 1.0
+
+        def query_viewport() -> None:
+            if request_id != self._fit_request_id or self._web_view is None:
+                return
+            self._web_view.page().runJavaScript(
+                "({width: window.innerWidth, height: window.innerHeight})",
+                lambda viewport: self._apply_fit_viewport(request_id, viewport),
+            )
+
+        QTimer.singleShot(0, query_viewport)
+
+    def _apply_fit_viewport(self, request_id: int, viewport) -> None:
+        if (
+            request_id != self._fit_request_id
+            or not self._has_preview
+            or self._web_view is None
+            or not isinstance(viewport, dict)
+        ):
             return
 
-        factor = min(viewport.width() / width, viewport.height() / height) * 0.96
-        # Fit should never magnify small/raster-heavy templates beyond their native
-        # size; users can still zoom in manually afterwards.
-        self._set_zoom_factor(min(1.0, factor), auto_fit=True)
-        self._web_view.page().runJavaScript("window.scrollTo(0, 0);")
+        try:
+            viewport_width = float(viewport["width"])
+            viewport_height = float(viewport["height"])
+        except (KeyError, TypeError, ValueError):
+            return
+
+        factor = fit_zoom_factor(
+            viewport_width=viewport_width,
+            viewport_height=viewport_height,
+            content_width=self._svg_size[0],
+            content_height=self._svg_size[1],
+        )
+        self._set_zoom_factor(factor, auto_fit=True)
+        QTimer.singleShot(0, lambda: self._center_content(request_id))
+
+    def _center_content(self, request_id: int) -> None:
+        if request_id != self._fit_request_id or self._web_view is None:
+            return
+        self._web_view.page().runJavaScript(
+            """
+            (() => {
+                const scroller = document.scrollingElement || document.documentElement;
+                const left = Math.max(0, (scroller.scrollWidth - window.innerWidth) / 2);
+                const top = Math.max(0, (scroller.scrollHeight - window.innerHeight) / 2);
+                window.scrollTo(left, top);
+            })();
+            """
+        )
 
     def zoom_in(self) -> None:
         self._zoom_by(1.2)
@@ -280,6 +384,7 @@ class SvgPreviewView(QWidget):
     def _zoom_by(self, factor: float) -> None:
         if not self._has_preview:
             return
+        self._fit_request_id += 1
         self._set_zoom_factor(self._zoom_factor * factor, auto_fit=False)
 
     def _set_zoom_factor(self, factor: float, *, auto_fit: bool) -> None:
@@ -398,7 +503,9 @@ class ExportPreviewPanel(QWidget):
 
         self.fit_btn = QPushButton("Fit")
         self.fit_btn.setMinimumWidth(52)
-        self.fit_btn.setToolTip("Fit the full diagram in the preview")
+        self.fit_btn.setToolTip(
+            "Fit the full diagram in the preview (wheel: vertical, Alt+wheel: horizontal, Ctrl+wheel: zoom)"
+        )
         toolbar.addWidget(self.fit_btn)
         preview_layout.addLayout(toolbar)
 
@@ -461,7 +568,9 @@ class ExportPreviewPanel(QWidget):
     def _set_text_layout_visible(self, visible: bool) -> None:
         self.controls_frame.setVisible(visible)
         if visible:
-            total_width = max(self.content_splitter.width(), sum(self.content_splitter.sizes()))
+            total_width = max(
+                self.content_splitter.width(), sum(self.content_splitter.sizes())
+            )
             if total_width > 0:
                 controls_width = min(
                     self.DEFAULT_TEXT_LAYOUT_PANE_PX,
