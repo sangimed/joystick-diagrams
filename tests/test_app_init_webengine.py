@@ -1,6 +1,5 @@
 from pathlib import Path
 
-
 APP_INIT_PATH = Path(__file__).parents[1] / "joystick_diagrams" / "app_init.py"
 
 

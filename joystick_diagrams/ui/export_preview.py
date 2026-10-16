@@ -4,7 +4,7 @@ import re
 from pathlib import Path
 
 import qtawesome as qta
-from PySide6.QtCore import QEvent, QSize, QTemporaryDir, QTimer, Qt, QUrl, Signal
+from PySide6.QtCore import QEvent, QSize, Qt, QTemporaryDir, QTimer, QUrl, Signal
 from PySide6.QtWebEngineWidgets import QWebEngineView
 from PySide6.QtWidgets import (
     QFrame,
@@ -21,7 +21,6 @@ from PySide6.QtWidgets import (
 
 from joystick_diagrams.export_text_layout import get_text_layout_options
 from joystick_diagrams.ui.export_text_layout_settings import ExportTextLayoutSettings
-
 
 _DIMENSION_RE = re.compile(r"^\s*([0-9]+(?:\.[0-9]+)?)\s*([a-zA-Z%]*)")
 _CSS_PX_PER_UNIT = {
