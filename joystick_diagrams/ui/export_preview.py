@@ -314,6 +314,7 @@ class ExportPreviewPanel(QWidget):
 
     settings_changed = Signal()
     PREFERRED_DEVICE_PANE_PX = 340
+    DEFAULT_TEXT_LAYOUT_PANE_PX = 320
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -335,13 +336,16 @@ class ExportPreviewPanel(QWidget):
         header.addWidget(self.context_label)
         root.addLayout(header)
 
-        body = QHBoxLayout()
-        body.setContentsMargins(0, 0, 0, 0)
-        body.setSpacing(8)
+        self.content_splitter = QSplitter(Qt.Orientation.Horizontal, self)
+        self.content_splitter.setChildrenCollapsible(False)
+        self.content_splitter.setOpaqueResize(True)
+        self.content_splitter.setHandleWidth(8)
 
         self.controls_frame = QFrame()
-        self.controls_frame.setMinimumWidth(300)
-        self.controls_frame.setMaximumWidth(360)
+        self.controls_frame.setMinimumWidth(260)
+        self.controls_frame.setSizePolicy(
+            QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Expanding
+        )
         controls_layout = QVBoxLayout(self.controls_frame)
         controls_layout.setContentsMargins(8, 8, 8, 8)
         controls_layout.setSpacing(0)
@@ -360,10 +364,9 @@ class ExportPreviewPanel(QWidget):
         controls_scroll.setWidget(self.layout_settings)
         controls_layout.addWidget(controls_scroll)
         self.controls_frame.hide()
-        body.addWidget(self.controls_frame, 0)
 
-        preview_frame = QFrame()
-        preview_layout = QVBoxLayout(preview_frame)
+        self.preview_frame = QFrame()
+        preview_layout = QVBoxLayout(self.preview_frame)
         preview_layout.setContentsMargins(0, 0, 0, 0)
         preview_layout.setSpacing(4)
 
@@ -416,8 +419,11 @@ class ExportPreviewPanel(QWidget):
         self.status_label.setWordWrap(True)
         preview_layout.addWidget(self.status_label)
 
-        body.addWidget(preview_frame, 1)
-        root.addLayout(body, 1)
+        self.content_splitter.addWidget(self.controls_frame)
+        self.content_splitter.addWidget(self.preview_frame)
+        self.content_splitter.setStretchFactor(0, 0)
+        self.content_splitter.setStretchFactor(1, 1)
+        root.addWidget(self.content_splitter, 1)
 
         self.text_layout_btn.toggled.connect(self._set_text_layout_visible)
         self.zoom_out_btn.clicked.connect(self.svg_view.zoom_out)
@@ -454,6 +460,17 @@ class ExportPreviewPanel(QWidget):
 
     def _set_text_layout_visible(self, visible: bool) -> None:
         self.controls_frame.setVisible(visible)
+        if visible:
+            total_width = max(self.content_splitter.width(), sum(self.content_splitter.sizes()))
+            if total_width > 0:
+                controls_width = min(
+                    self.DEFAULT_TEXT_LAYOUT_PANE_PX,
+                    max(260, total_width - self.svg_view.minimumWidth()),
+                )
+                self.content_splitter.setSizes(
+                    [controls_width, max(1, total_width - controls_width)]
+                )
+
         # Let the Chromium viewport settle before recomputing a fitted preview.
         if self.svg_view.has_preview and self.svg_view._auto_fit:
             QTimer.singleShot(0, self.svg_view.fit_content)
