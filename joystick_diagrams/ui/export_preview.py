@@ -3,7 +3,8 @@
 import re
 from pathlib import Path
 
-from PySide6.QtCore import QEvent, QTemporaryDir, QTimer, Qt, QUrl, Signal
+import qtawesome as qta
+from PySide6.QtCore import QEvent, QSize, QTemporaryDir, QTimer, Qt, QUrl, Signal
 from PySide6.QtWebEngineWidgets import QWebEngineView
 from PySide6.QtWidgets import (
     QFrame,
@@ -486,9 +487,14 @@ class ExportPreviewPanel(QWidget):
         toolbar.addWidget(self.text_layout_btn)
         toolbar.addStretch(1)
 
-        self.zoom_out_btn = QPushButton("-")
-        self.zoom_out_btn.setFixedWidth(36)
-        self.zoom_out_btn.setToolTip("Zoom out")
+        self.zoom_out_btn = QPushButton()
+        self.zoom_out_btn.setFixedWidth(38)
+        self.zoom_out_btn.setIcon(
+            qta.icon("fa5s.search-minus", color="white", color_disabled="#6B7280")
+        )
+        self.zoom_out_btn.setIconSize(QSize(18, 18))
+        self.zoom_out_btn.setToolTip("Zoom out (Ctrl + mouse wheel)")
+        self.zoom_out_btn.setAccessibleName("Zoom out")
         toolbar.addWidget(self.zoom_out_btn)
 
         self.zoom_label = QLabel("100%")
@@ -496,17 +502,15 @@ class ExportPreviewPanel(QWidget):
         self.zoom_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         toolbar.addWidget(self.zoom_label)
 
-        self.zoom_in_btn = QPushButton("+")
-        self.zoom_in_btn.setFixedWidth(36)
-        self.zoom_in_btn.setToolTip("Zoom in")
-        toolbar.addWidget(self.zoom_in_btn)
-
-        self.fit_btn = QPushButton("Fit")
-        self.fit_btn.setMinimumWidth(52)
-        self.fit_btn.setToolTip(
-            "Fit the full diagram in the preview (wheel: vertical, Alt+wheel: horizontal, Ctrl+wheel: zoom)"
+        self.zoom_in_btn = QPushButton()
+        self.zoom_in_btn.setFixedWidth(38)
+        self.zoom_in_btn.setIcon(
+            qta.icon("fa5s.search-plus", color="white", color_disabled="#6B7280")
         )
-        toolbar.addWidget(self.fit_btn)
+        self.zoom_in_btn.setIconSize(QSize(18, 18))
+        self.zoom_in_btn.setToolTip("Zoom in (Ctrl + mouse wheel)")
+        self.zoom_in_btn.setAccessibleName("Zoom in")
+        toolbar.addWidget(self.zoom_in_btn)
         preview_layout.addLayout(toolbar)
 
         self.preview_stack = QStackedWidget()
@@ -535,7 +539,6 @@ class ExportPreviewPanel(QWidget):
         self.text_layout_btn.toggled.connect(self._set_text_layout_visible)
         self.zoom_out_btn.clicked.connect(self.svg_view.zoom_out)
         self.zoom_in_btn.clicked.connect(self.svg_view.zoom_in)
-        self.fit_btn.clicked.connect(self.svg_view.fit_content)
         self.svg_view.zoom_changed.connect(self._on_zoom_changed)
 
         self.show_empty("Select a profile to preview its generated diagram.")
@@ -626,7 +629,6 @@ class ExportPreviewPanel(QWidget):
     def _set_zoom_controls_enabled(self, enabled: bool) -> None:
         self.zoom_out_btn.setEnabled(enabled)
         self.zoom_in_btn.setEnabled(enabled)
-        self.fit_btn.setEnabled(enabled)
 
     def _on_zoom_changed(self, percent: int) -> None:
         self.zoom_label.setText(f"{percent}%")
