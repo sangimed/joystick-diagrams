@@ -1,4 +1,5 @@
 import pytest
+from PySide6.QtWidgets import QSplitter
 
 from joystick_diagrams.ui.export_preview import (
     ExportPreviewPanel,
@@ -71,6 +72,18 @@ def test_text_layout_panel_is_collapsed_by_default(qtbot):
     assert panel.text_layout_btn.isCheckable() is True
     assert panel.text_layout_btn.isChecked() is False
     assert panel.controls_frame.isHidden() is True
+
+
+def test_text_layout_and_preview_are_separated_by_resizable_splitter(qtbot):
+    panel = ExportPreviewPanel()
+    qtbot.addWidget(panel)
+
+    assert isinstance(panel.content_splitter, QSplitter)
+    assert panel.content_splitter.count() == 2
+    assert panel.content_splitter.widget(0) is panel.controls_frame
+    assert panel.content_splitter.widget(1) is panel.preview_frame
+    assert panel.content_splitter.childrenCollapsible() is False
+    assert panel.controls_frame.maximumWidth() > 360
 
 
 def test_text_layout_button_toggles_controls_without_hiding_preview(qtbot):
