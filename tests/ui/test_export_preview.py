@@ -154,3 +154,20 @@ def test_preview_panel_forwards_text_layout_changes(qtbot):
     panel.layout_settings.enabled_cb.setChecked(True)
 
     assert changes
+
+
+def test_preview_toolbar_has_no_fit_button(qtbot):
+    panel = ExportPreviewPanel()
+    qtbot.addWidget(panel)
+
+    assert not hasattr(panel, "fit_btn")
+
+
+def test_preview_zoom_buttons_use_magnifier_icons(qtbot):
+    panel = ExportPreviewPanel()
+    qtbot.addWidget(panel)
+
+    assert panel.zoom_out_btn.text() == ""
+    assert panel.zoom_in_btn.text() == ""
+    assert panel.zoom_out_btn.icon().isNull() is False
+    assert panel.zoom_in_btn.icon().isNull() is False
