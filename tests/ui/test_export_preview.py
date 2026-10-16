@@ -1,10 +1,13 @@
 import pytest
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QSplitter
 
 from joystick_diagrams.ui.export_preview import (
     ExportPreviewPanel,
     SvgPreviewView,
+    fit_zoom_factor,
     parse_svg_dimensions,
+    wheel_navigation_mode,
 )
 
 
@@ -38,6 +41,48 @@ def test_parse_svg_dimensions_falls_back_to_default():
     svg = '<svg xmlns="http://www.w3.org/2000/svg"></svg>'
 
     assert parse_svg_dimensions(svg) == (800.0, 600.0)
+
+
+def test_wheel_without_modifier_uses_vertical_scroll():
+    assert wheel_navigation_mode(Qt.KeyboardModifier.NoModifier) == "vertical"
+
+
+def test_alt_wheel_uses_horizontal_scroll():
+    assert wheel_navigation_mode(Qt.KeyboardModifier.AltModifier) == "horizontal"
+
+
+def test_ctrl_wheel_uses_zoom():
+    assert wheel_navigation_mode(Qt.KeyboardModifier.ControlModifier) == "zoom"
+
+
+def test_ctrl_takes_priority_when_ctrl_and_alt_are_held():
+    modifiers = (
+        Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.AltModifier
+    )
+
+    assert wheel_navigation_mode(modifiers) == "zoom"
+
+
+def test_fit_zoom_factor_fits_entire_svg_inside_css_viewport():
+    factor = fit_zoom_factor(
+        viewport_width=900,
+        viewport_height=450,
+        content_width=1498,
+        content_height=780,
+    )
+
+    assert factor == pytest.approx((450 / 780) * 0.96)
+
+
+def test_fit_zoom_factor_never_magnifies_above_native_size():
+    factor = fit_zoom_factor(
+        viewport_width=1600,
+        viewport_height=1000,
+        content_width=800,
+        content_height=600,
+    )
+
+    assert factor == 1.0
 
 
 def test_svg_preview_creates_webengine_lazily(qtbot):
